@@ -5,17 +5,15 @@ const fetch = require('node-fetch');
 const path = require('path');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const useragent = require('express-useragent'); // Tambahkan pustaka ini
+const useragent = require('express-useragent');
 
 const app = express();
 const PORT = 3000;
 
-// Konfigurasi Cloudflare (Pindahkan ke Variabel Lingkungan untuk produksi!)
 const CLOUDFLARE_ZONE = "8986c21d4df43f0d1708b8f9f6ab4dcd";
 const CLOUDFLARE_API_TOKEN = "FUKXUphvvUDKUQW8v8JIWXBQekynFNOV1ltmT4eE";
 const CLOUDFLARE_TLD = "wanzofc.us.kg";
 
-// Konfigurasi multer
 const storage = multer.memoryStorage();
 const upload = multer({
     storage: storage,
@@ -23,11 +21,10 @@ const upload = multer({
 });
 
 app.use(express.static(__dirname));
-app.use(express.json()); // Untuk mengurai body JSON
-app.use(express.urlencoded({ extended: true })); // Untuk mengurai body yang di-encode dalam URL
-app.use(useragent.express()); // Tambahkan middleware useragent
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(useragent.express());
 
-// Fungsi untuk membuat subdomain di Cloudflare
 async function subDomain1(host, ip) {
     const apiUrl = `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE}/dns_records`;
     const headers = {
@@ -57,7 +54,6 @@ async function subDomain1(host, ip) {
     }
 }
 
-// Endpoint untuk mengunggah file
 app.post('/upload', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
@@ -69,10 +65,9 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         const fileExtension = originalFileName.split('.').pop();
         const customFileName = `wanz-${uuidv4()}.${fileExtension}`;
         const formData = new FormData();
-        formData.append('images', fileBuffer, originalFileName);
+        formData.append('file', fileBuffer, { filename: originalFileName });
 
-
-        const uploadURL = 'https://telegraph.zorner.men/upload';
+        const uploadURL = 'https://telegra.ph/upload';
         const response = await fetch(uploadURL, {
             method: 'POST',
             body: formData,
@@ -91,26 +86,25 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         }
 
         const result = await response.json();
-        if (result && result.src) {
-            const originalUrl = result.src;
+        
+        if (result && result[0] && result[0].src) {
+            const originalUrl = 'https://telegra.ph' + result[0].src;
             const baseURL = originalUrl.substring(0, originalUrl.lastIndexOf('/') + 1);
             const customUrl = `${baseURL}${customFileName}`;
 
             try {
                 const subdomainName = req.body.subdomain || `wanz-${uuidv4()}`;
-                const ipAddress = req.body.ip || "103.226.128.118"; // Ambil IP dari request atau gunakan default
+                const ipAddress = req.body.ip || "103.226.128.118";
                 const subdomainResult = await subDomain1(subdomainName, ipAddress);
-                if(subdomainResult.success){
-                    res.json({ ...result, src: customUrl, subdomain: subdomainResult.name });
-                }else{
-                    return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare: '+ subdomainResult.error });
+                if (subdomainResult.success) {
+                    res.json({ src: customUrl, subdomain: subdomainResult.name });
+                } else {
+                    return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare: ' + subdomainResult.error });
                 }
-
             } catch (cloudflareError) {
                 console.error("Gagal membuat subdomain Cloudflare:", cloudflareError);
                 return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare.' });
             }
-
         } else {
             res.json(result);
         }
@@ -120,7 +114,6 @@ app.post('/upload', upload.single('image'), async (req, res) => {
     }
 });
 
-// Endpoint API untuk permintaan GET
 app.get('/api/data', (req, res) => {
     const apiData = {
         message: 'Ini adalah data dari server Anda!',
@@ -129,7 +122,6 @@ app.get('/api/data', (req, res) => {
     res.json(apiData);
 });
 
-// Endpoint API untuk permintaan POST
 app.post('/api/data', (req, res) => {
     const receivedData = req.body;
 
@@ -145,7 +137,6 @@ app.post('/api/data', (req, res) => {
     });
 });
 
-// Endpoint utama untuk mengirim index.html dan mencatat informasi pengguna
 app.get('/', async (req, res) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const source = req.useragent;
@@ -166,7 +157,6 @@ app.get('/', async (req, res) => {
     }
 
     try {
-        // Mendapatkan lokasi menggunakan API eksternal (misalnya, ip-api.com)
         const response = await axios.get(`http://ip-api.com/json/${ip}`);
         const location = response.data;
         console.log('Lokasi:');
@@ -183,7 +173,6 @@ app.get('/', async (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Menjalankan server
 app.listen(PORT, () => {
     console.log(`Server berjalan di http://localhost:${PORT}`);
 });
