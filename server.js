@@ -62,15 +62,21 @@ app.post('/upload', upload.single('image'), async (req, res) => {
 
         const fileBuffer = req.file.buffer;
         const originalFileName = req.file.originalname || 'image.jpg';
-        const fileExtension = originalFileName.split('.').pop();
-        const customFileName = `wanz-${uuidv4()}.${fileExtension}`;
+        
         const formData = new FormData();
         formData.append('file', fileBuffer, { filename: originalFileName });
 
         const uploadURL = 'https://telegra.ph/upload';
+
+        const formHeaders = formData.getHeaders();
+
         const response = await fetch(uploadURL, {
             method: 'POST',
             body: formData,
+            headers: {
+                ...formHeaders,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
         });
 
         if (!response.ok) {
@@ -80,24 +86,22 @@ app.post('/upload', upload.single('image'), async (req, res) => {
             } catch (jsonError) {
                 errorBody = await response.text();
             }
-            const errorMessage = `Upload gagal dengan status ${response.status}: ${errorBody}`;
-            console.error("Upload gagal dengan status:", response.status, "dan pesan:", errorBody);
-            return res.status(response.status).json({ error: errorMessage });
+            const errorMessage = `Upload gagal dengan status ${response.status}: ${errorBody || 'Unknown error'}`;
+            console.error("Upload failed with status:", response.status, "and message:", errorBody);
+            return res.status(response.status).json({ error: errorBody || 'Unknown error' });
         }
 
         const result = await response.json();
         
         if (result && result[0] && result[0].src) {
-            const originalUrl = 'https://telegra.ph' + result[0].src;
-            const baseURL = originalUrl.substring(0, originalUrl.lastIndexOf('/') + 1);
-            const customUrl = `${baseURL}${customFileName}`;
+            const finalUrl = 'https://telegra.ph' + result[0].src;
 
             try {
                 const subdomainName = req.body.subdomain || `wanz-${uuidv4()}`;
                 const ipAddress = req.body.ip || "103.226.128.118";
                 const subdomainResult = await subDomain1(subdomainName, ipAddress);
                 if (subdomainResult.success) {
-                    res.json({ src: customUrl, subdomain: subdomainResult.name });
+                    res.json({ src: finalUrl, subdomain: subdomainResult.name });
                 } else {
                     return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare: ' + subdomainResult.error });
                 }
@@ -106,11 +110,11 @@ app.post('/upload', upload.single('image'), async (req, res) => {
                 return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare.' });
             }
         } else {
-            res.json(result);
+            res.status(500).json({ error: 'Format respons tidak valid dari layanan unggah.' });
         }
     } catch (error) {
         console.error("Error saat mengunggah:", error);
-        res.status(500).json({ error: 'Terjadi kesalahan server saat mengunggah file. Mohon coba lagi nanti.' });
+        res.status(500).json({ error: 'Terjadi kesalahan server saat mengunggah file.' });
     }
 });
 
