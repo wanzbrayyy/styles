@@ -31,7 +31,6 @@ async function subDomain1(host, ip) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
     };
-
     const data = {
         type: 'A',
         name: `${host}.${CLOUDFLARE_TLD}`,
@@ -49,7 +48,7 @@ async function subDomain1(host, ip) {
             return { success: false, error: response.data.errors };
         }
     } catch (error) {
-        console.error("Error creating subdomain:", error);
+        console.error("Error creating subdomain:", error.response ? error.response.data : error.message);
         return { success: false, error: error.message };
     }
 }
@@ -60,81 +59,61 @@ app.post('/upload', upload.single('image'), async (req, res) => {
             return res.status(400).json({ error: 'Tidak ada file yang diunggah.' });
         }
 
-        const fileBuffer = req.file.buffer;
-        const originalFileName = req.file.originalname || 'image.jpg';
-        
         const formData = new FormData();
-        formData.append('file', fileBuffer, { filename: originalFileName });
+        formData.append('reqtype', 'fileupload');
+        formData.append('fileToUpload', req.file.buffer, { filename: req.file.originalname });
 
-        const uploadURL = 'https://telegra.ph/upload';
-
-        const formHeaders = formData.getHeaders();
-
+        const uploadURL = 'https://catbox.moe/user/api.php';
         const response = await fetch(uploadURL, {
             method: 'POST',
             body: formData,
-            headers: {
-                ...formHeaders,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
+            headers: formData.getHeaders()
         });
 
         if (!response.ok) {
-            let errorBody;
-            try {
-                errorBody = await response.json();
-            } catch (jsonError) {
-                errorBody = await response.text();
-            }
-            const errorMessage = `Upload gagal dengan status ${response.status}: ${errorBody || 'Unknown error'}`;
-            console.error("Upload failed with status:", response.status, "and message:", errorBody);
-            return res.status(response.status).json({ error: errorBody || 'Unknown error' });
+            const errorText = await response.text();
+            console.error("Upload failed with status:", response.status, "and message:", errorText);
+            return res.status(response.status).json({ error: errorText || 'Gagal mengunggah ke layanan eksternal.' });
         }
 
-        const result = await response.json();
-        
-        if (result && result[0] && result[0].src) {
-            const finalUrl = 'https://telegra.ph' + result[0].src;
+        const resultUrl = await response.text();
 
+        if (resultUrl && resultUrl.startsWith('http')) {
             try {
                 const subdomainName = req.body.subdomain || `wanz-${uuidv4()}`;
                 const ipAddress = req.body.ip || "103.226.128.118";
                 const subdomainResult = await subDomain1(subdomainName, ipAddress);
                 if (subdomainResult.success) {
-                    res.json({ src: finalUrl, subdomain: subdomainResult.name });
+                    res.json({ src: resultUrl, subdomain: subdomainResult.name });
                 } else {
-                    return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare: ' + subdomainResult.error });
+                    return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain: ' + subdomainResult.error });
                 }
             } catch (cloudflareError) {
                 console.error("Gagal membuat subdomain Cloudflare:", cloudflareError);
                 return res.status(500).json({ error: 'Upload berhasil, tetapi gagal membuat subdomain Cloudflare.' });
             }
         } else {
-            res.status(500).json({ error: 'Format respons tidak valid dari layanan unggah.' });
+            res.status(500).json({ error: 'Format respons tidak valid dari layanan unggah: ' + resultUrl });
         }
     } catch (error) {
         console.error("Error saat mengunggah:", error);
-        res.status(500).json({ error: 'Terjadi kesalahan server saat mengunggah file.' });
+        res.status(500).json({ error: 'Terjadi kesalahan internal pada server.' });
     }
 });
 
 app.get('/api/data', (req, res) => {
-    const apiData = {
+    res.json({
         message: 'Ini adalah data dari server Anda!',
         timestamp: new Date()
-    };
-    res.json(apiData);
+    });
 });
 
 app.post('/api/data', (req, res) => {
     const receivedData = req.body;
-
     if (!receivedData) {
         return res.status(400).json({ error: 'Tidak ada data yang diterima.' });
     }
-
     console.log('Data yang diterima dari permintaan POST:', receivedData);
-
     res.json({
         message: 'Data diterima dan diproses!',
         receivedData: receivedData
@@ -144,36 +123,22 @@ app.post('/api/data', (req, res) => {
 app.get('/', async (req, res) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const source = req.useragent;
-
     console.log('------------------------------');
     console.log('Pengguna mengakses halaman web:');
     console.log('IP:', ip);
-
     if (source) {
-        console.log('Browser:', source.browser);
-        console.log('Versi:', source.version);
-        console.log('OS:', source.os);
-        console.log('Platform:', source.platform);
-        console.log('Apakah ponsel?', source.isMobile ? 'Ya' : 'Tidak');
-        console.log('Apakah desktop?', source.isDesktop ? 'Ya' : 'Tidak');
-    } else {
-        console.log('Informasi agen pengguna tidak tersedia.');
+        console.log('Browser:', source.browser, 'Versi:', source.version);
+        console.log('OS:', source.os, 'Platform:', source.platform);
     }
-
     try {
         const response = await axios.get(`http://ip-api.com/json/${ip}`);
         const location = response.data;
-        console.log('Lokasi:');
-        console.log('- Negara:', location.country);
-        console.log('- Kota:', location.city);
-        console.log('- Koordinat:', location.lat, location.lon);
-        console.log('- ISP:', location.isp);
+        console.log('Lokasi:', location.city, ',', location.country);
+        console.log('ISP:', location.isp);
     } catch (error) {
         console.error('Gagal mendapatkan lokasi:', error.message);
     }
-
     console.log('------------------------------');
-
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
